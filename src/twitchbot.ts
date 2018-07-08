@@ -80,27 +80,30 @@ export class TwitchBot {
             if(words[0].indexOf('!') === 0) {
                 const command = words[0];
                 switch (command) {
+                    /*
+                        QUIZ COMMANDS
+                    */
                     case '!addwinner':
                     case '!aw': 
                         this.quiz.addWinner(words[1]);
                         break;
                     case '!printwinners':
                     case '!pw':
-                        console.log(command);
                         this.w.send(`PRIVMSG #${this.channel} : ${this.quiz.printWinners()}`);
                         break;
+                    case '!removewinner':
+                    case '!rw':
+                        this.quiz.removeWinner(words[1]);
+                        break;
+                    case '!resetquiz':
+                    case '!rq':
+                        this.quiz.resetQuiz();
                     default:
                         console.log('Invalid Command', command);
                 }
             }
         }
     }
-
-
-
-
-
-
 
     private parseMessage(msg: string): Chat {
         const tokens = msg.split(':').filter(m => m.length > 0);

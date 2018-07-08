@@ -6,7 +6,6 @@ export class Quiz {
     }
 
     addWinner(name: string) {
-        console.log('adding winner ' + name);
         const wIdx = this.winners.findIndex((w: Winner) => w.name === name);
 
         if(wIdx < 0) {
@@ -18,14 +17,28 @@ export class Quiz {
         this.sortWinners();
     }
 
+    removeWinner(name: string) {
+        const wIdx = this.winners.findIndex((w: Winner) => w.name === name);
+
+        if(wIdx >= 0 && this.winners[wIdx].winCount > 0) {
+            this.winners[wIdx].winCount--;
+        }
+
+        this.sortWinners();
+    }
+
     printWinners(): string {
         let winners = '';
 
-        this.winners.forEach(w => winners += ` ${w.name}(${w.winCount})`);
+        this.winners
+            .filter(w => w.winCount > 0)
+            .forEach(w => winners += ` ${w.name}(${w.winCount})`);
 
-        winners = `QUIZ LEADERBOARD: ${winners.substr(1)}`;
-        console.log(winners);
-        return winners;
+        return `QUIZ LEADERBOARD: ${winners.substr(1)}`;
+    }
+
+    resetQuiz() {
+        this.winners = [];
     }
 
     private sortWinners() {
