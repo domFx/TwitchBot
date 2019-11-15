@@ -2,9 +2,9 @@
   "name": "twitchbot",
   "version": "1.0.0",
   "description": "Twitch Chat Bot",
-  "main": "src/app.ts",
+  "main": "/src/app.ts",
   "scripts": {
-    "build": "webpack --config ./webpack.config.js",
+    "build": "webpack --config webpack.config.js",
     "server": "nodemon ./dist/app.js",
     "start": "npm-run-all --parallel build server"
   },
@@ -26,6 +26,6 @@
     "ts-loader": "^4.4.2",
     "typescript": "^2.9.2",
     "webpack": "^4.15.1",
-    "webpack-cli": "^3.0.8"
+    "webpack-cli": "^3.3.9"
   }
 }
