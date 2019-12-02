@@ -1,5 +1,3 @@
-import { isPrimitive } from "util";
-
 export class Chat {
     username: string;
     isMod: boolean;

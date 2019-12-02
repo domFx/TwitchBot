@@ -6,6 +6,9 @@ const fs = require('fs');
 import { Credentials } from './credentials';
 import { Chat } from './chat';
 
+// Modules
+import { Queue } from './modules/queue';
+
 export class TwitchBot {
     w: WS;
     app: express.Application;
@@ -17,8 +20,10 @@ export class TwitchBot {
     // channel: string = 'ooclanoo';
     channel: string = 'domfx';
 
-    lastQueuePopTime: Date;
-    
+    queueModule: Queue = new Queue();
+
+    reconnect: boolean = true;
+
     constructor() {
         this.username = Credentials.user; 
         this.password =  Credentials.password;
@@ -69,114 +74,25 @@ export class TwitchBot {
 
     private onClose(): any {
         console.log('Connection Closed');
-    }
 
-    queue: string[] = [];
+        if (this.reconnect) {
+            // Try to reconnect
+            this.w = new ws('wss://irc-ws.chat.twitch.tv:443');
+        }
+    }
     
     commandHandler(chat: Chat) {
         const words = chat.chatMessage.split(' ').filter(c => c.length > 0);
         if(!!words && words.length > 0) {
             if(words[0].indexOf('!') === 0) {
-                const command = words[0];
-                switch (command) {
-                    case '!join':
-                        const personIdx = this.queue.findIndex(p => p === chat.username);
-                        if(personIdx < 0) {
-                            this.queue.push(chat.username);
-                            this.sendChannelMessage(`Added ${chat.username} to the queue`);
-                        }
-                        break;
-                    case '!printq':
-                        if(this.queue.length === 0) {
-                            this.sendChannelMessage(`The queue is empty!`);
-                            
-                        } else {
-                            let ppl = '';
-                            for(let i = 0; i < this.queue.length; i++) {
-                                ppl += `${i + 1} - ${this.queue[i]} \n`;
-                            }
-                            this.sendChannelMessage(`${ppl}`);
-                        }
-                        break;
-                    case '!leave':
-                        let idx = this.queue.findIndex(p => p === chat.username);
-                        if(idx >= 0) {
-                            this.queue.splice(idx, 1);
-                            this.sendChannelMessage(`Removed ${chat.username} from the queue`);
-                        }
-                        break;
-                    case '!next':
-                        if (this.queue.length > 0 && chat.isMod) {
-                            if(!this.lastQueuePopTime) {
-                                this.lastQueuePopTime = new Date();
-                                
-                                // Pop the queue
-                                let person = this.queue[0];
-                                this.queue.splice(0, 1);
-                                this.sendChannelMessage(`${person} is up next!`);
-                                
-                                if(this.queue.length === 0) {
-                                    this.lastQueuePopTime = undefined;
-                                }
+                const cmd = words[0];
 
-                            } else {
-                                const currentTime = new Date();
+                words.shift();
+                const args = words;
 
-                                const mins = Math.abs(currentTime.getTime() - this.lastQueuePopTime.getTime()) / 1000 / 60;
-
-                                if(mins > 0.25) {
-                                    let person = this.queue[0];
-                                    this.queue.splice(0, 1);
-                                    this.sendChannelMessage(`${person} is up next!`);
-                                    
-                                    if(this.queue.length === 0) {
-                                        this.lastQueuePopTime = undefined;
-                                    }
-                                }
-                            }
-                        }
-                        break;
-                    case '!remove':
-                        if(chat.isMod && words[1].length > 0) {
-                            const userIdx = this.queue.findIndex(q => q.toLocaleLowerCase() === words[1].toLocaleLowerCase());
-                            if(userIdx >= 0) {
-                                this.queue.splice(userIdx, 1);
-                                this.sendChannelMessage(`${words[1]} has been removed from the queue!`);
-                            }
-                        } 
-                        break;
-                    case '!add':
-                        if(chat.isMod && words[1].length > 0) {
-                            if(words[2]) {
-                                // add user to specific position in queue
-                                // !add domfx 1
-                                let queueIdx = +words[2];
-                                if(!isNaN(queueIdx)) {
-                                    this.queue.splice(queueIdx, 0, words[1]);                                
-                                }
-                            } else {
-                                // add user to front of queue
-                                this.queue.push(words[1]);
-                            }
-                        }
-                        break;
-                    case '!clearq':
-                        if(chat.isMod) {
-                            this.queue = [];
-                        }
-                        break;
-                    case '!position':
-                        const posIdx = this.queue.findIndex(i => i === chat.username);
-                        if(posIdx >= 0) {
-                            this.sendChannelMessage(`${chat.username} is position ${posIdx + 1} in the queue`);
-                        } else {
-                            this.sendChannelMessage(`${chat.username} is not in the queue`);
-                        }
-                        break;
-                    default:
-                        console.log('Invalid Command', command);
-                        break;
-                }
+                const returnMsg = this.queueModule.commandHandler(chat.username, chat.isMod, cmd, args);
+                if(!!returnMsg && returnMsg.length > 0)
+                    this.sendChannelMessage(returnMsg);
             }
         }
     }
@@ -193,10 +109,10 @@ export class TwitchBot {
             const userTags = tokens[0].split(';');
 
             let isMod = false;
-            const userTypeIdx = userTags.findIndex(m => m.startsWith('user-type'));
-            if(userTypeIdx >= 0) {
-                const userTypeTokens = userTags[userTypeIdx].split('=');
-                if(userTypeTokens.length === 2 && userTypeTokens[1].trim() === 'mod') {
+            const modIdx = userTags.findIndex(m => m.startsWith('mod'));
+            if(modIdx >= 0) {
+                const userTypeTokens = userTags[modIdx].split('=');
+                if(userTypeTokens.length === 2 && +userTypeTokens[1].trim() === 1) {
                     isMod = true;
                 }
             }
@@ -205,11 +121,10 @@ export class TwitchBot {
             const badgeListIdx = userTags.findIndex(m => m.startsWith('badges'));
             if(badgeListIdx >= 0) {
                 const badgeTokens = userTags[badgeListIdx].split('=');
-                if(badgeTokens.length === 2) {
+                if(badgeTokens.length === 2 && badgeTokens[1].includes('broadcaster')) {
                     isMod = true;
                     isBroadcaster = true;
                 }
-
             }
 
             let username = ''
@@ -227,7 +142,7 @@ export class TwitchBot {
 
             const chatMessage = (!!tokens[2]) ? tokens[2] : '';
             
-            console.log('User: ' + username + ' IsMod: ' + isMod + ' Message: ' + chatMessage);
+            console.log('User: ' + username + ' IsMod: ' + isMod + ' IsBroadcaster: ' + isBroadcaster + ' Message: ' + chatMessage);
             return new Chat(username, isMod, isBroadcaster, msgType, channel, chatMessage);
         }
     }
