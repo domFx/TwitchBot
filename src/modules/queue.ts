@@ -1,49 +1,31 @@
-export class Queue {
+import { TwitchModule } from "../twitch-module";
+
+export class Queue extends TwitchModule {
     private _queue: string[];
-
+    private _lastQueuePopTime: Date;
+    private _queuePopCooldown: number = 0.15;
+      
     constructor() {
-        this._queue = [];
-    }
-
-    commandHandler(username: string, isUserMod: boolean, cmd: string, args: string[]): string {
-        let returnMsg = '';
+        super();
         
-        switch(cmd) {
-            case '!join':
-                returnMsg = this.joinQueue(username);
-                break;
-            case '!printq':
-                returnMsg = this.printQueue();
-                break;
-            case '!leave':
-                returnMsg = this.leaveQueue(username);
-                break;
-            case '!next':
-                returnMsg = this.showNextInQueue(username, isUserMod);
-                break;
-            case '!add':
-                returnMsg = this.addToQueue(isUserMod, args);
-                break;
-            case '!position':
-                returnMsg = this.showPosition(username);
-                break;
-            case '!clearq':
-                returnMsg = this.clearQueue(isUserMod);
-                break;
-            case '!setq':
-                returnMsg = this.setQueue(isUserMod, args);
-                break;
-            case '!remove':
-                returnMsg = this.removeFromQueue(isUserMod, args);
-                break;
-            default: 
-                break;   
-        }
+        this._queue = [];
 
-        return returnMsg;
+        this._commandMap.set('!join', this.joinQueue);
+        this._commandMap.set('!printq', this.printQueue);
+        this._commandMap.set('!leave', this.leaveQueue);
+        this._commandMap.set('!next', this.showNextInQueue);
+        this._commandMap.set('!add', this.addToQueue);
+        this._commandMap.set('!position', this.showPosition);
+        this._commandMap.set('!clearq', this.clearQueue);
+        this._commandMap.set('!setq', this.setQueue);
+        this._commandMap.set('!remove', this.removeFromQueue);
+    } 
+    
+    commandHandler(username: string, isUserMod: boolean, cmd: string, args: string[]): string {
+        return this._commandMap.get(cmd).call(this, username, isUserMod, cmd, args);
     }
 
-    private printQueue(): string {
+    private printQueue(username: string, isUserMod: boolean, cmd: string, args: string[]): string {
         if(this._queue.length === 0) {
             return `The queue is empty!`;
         } else {
@@ -56,64 +38,67 @@ export class Queue {
         }
     }
 
-    private showNextInQueue(username: string, isUserMod: boolean): string {
+    private showNextInQueue(username: string, isUserMod: boolean, cmd: string, args: string[]): string {
         if (this._queue.length > 0 && isUserMod) {
-            // if(!this.lastQueuePopTime) {
-            //     this.lastQueuePopTime = new Date();
+            let mins = -1;
+            if(!this._lastQueuePopTime) {
+                this._lastQueuePopTime = new Date();
+            } else {
+                const currentTime = new Date();
+                mins = Math.abs(currentTime.getTime() - this._lastQueuePopTime.getTime()) / 1000 / 60;
+            }
+
+            if(mins >= 0 && mins < this._queuePopCooldown) {
+                return '';
+            } else {
+                let person = this._queue[0];
+                this._queue.splice(0, 1);
+
+                if(!this._queue || this._queue.length === 0)
+                    this._lastQueuePopTime = undefined;
+                else
+                    this._lastQueuePopTime = new Date();
                 
-            //     // Pop the queue
-            //     let person = this._queue[0];
-            //     this._queue.splice(0, 1);
-            //     return `${person} is up next!`;
-                
-            //     // if(this._queue.length === 0) {
-            //     //     this.lastQueuePopTime = undefined;
-            //     // }
-
-            // } else {
-
-            // }
-
-            // const currentTime = new Date();
-            // const mins = Math.abs(currentTime.getTime() - this.lastQueuePopTime.getTime()) / 1000 / 60;
-            // if(mins > 0.25) {
-            // }
-
-            // if(this._queue.length === 0) {
-            //     this.lastQueuePopTime = undefined;
-            // }
-            let person = this._queue[0];
-            this._queue.splice(0, 1);
-            return `${person} is up next!`;
+                return `${person} is up next!`;
+            }
         } else  {
             if(this._queue.length > 0)
-                return this.showPosition(username);
+                return this.showPosition(username, isUserMod, cmd, args);
             else
                 return 'The queue is empty!'
         }
     }
 
-    private removeFromQueue(isUserMod: boolean, args: string[]): string {
+    private removeFromQueue(username: string, isUserMod: boolean, cmd: string, args: string[]): string {
         if(isUserMod && args[0].length > 0) {
-            const userIdx = this._queue.findIndex(q => q.toLocaleLowerCase() === args[0].toLocaleLowerCase());
+            let user = args[0];
+            if(user.startsWith('@'))
+                user = user.substring(1);
+
+            const userIdx = this._queue.findIndex(q => q.toLocaleLowerCase() === user.toLocaleLowerCase());
+            
             if(userIdx >= 0) {
                 this._queue.splice(userIdx, 1);
-                return `${args[0]} has been removed from the queue!`;
+                return `${user} has been removed from the queue!`;
             } else {
-                return `Unable to find ${args[0]} in the queue`;
+                return `Unable to find ${user} in the queue`;
             }
         } 
     }
 
-    private addToQueue(isUserMod: boolean, args: string[]): string {
+    private addToQueue(username: string, isUserMod: boolean, cmd: string, args: string[]): string {
         if(isUserMod && args[0].length > 0) {
             if(args[1]) {
                 // add user to specific position in queue
                 // !add domfx 1
+                let user = args[0];
+                if(user.startsWith('@'))
+                    user = user.substring(1);
+
                 let queueIdx = +args[1];
                 if(!isNaN(queueIdx)) {
                     if(queueIdx >= 1) {
-                        this._queue.splice(queueIdx - 1, 0, args[0]);                                
+                        this._queue.splice(queueIdx - 1, 0, user);                                
                     }
                 }
             } else {
@@ -125,7 +110,7 @@ export class Queue {
         return '';
     }
 
-    private joinQueue(username: string): string {
+    private joinQueue(username: string, isUserMod: boolean, cmd: string, args: string[]): string {
         const personIdx = this._queue.findIndex(p => p === username);
         if(personIdx < 0) {
             this._queue.push(username);
@@ -133,7 +118,7 @@ export class Queue {
         }
     }
 
-    private leaveQueue(username: string): string {
+    private leaveQueue(username: string, isUserMod: boolean, cmd: string, args: string[]): string {
         let idx = this._queue.findIndex(p => p === username);
         if(idx >= 0) {
             this._queue.splice(idx, 1);
@@ -141,7 +126,7 @@ export class Queue {
         }
     }
 
-    private clearQueue(isUserMod: boolean): string {
+    private clearQueue(username: string, isUserMod: boolean, cmd: string, args: string[]): string {
         if(isUserMod) {
             this._queue = [];
         }
@@ -149,7 +134,7 @@ export class Queue {
         return '';
     }
 
-    private showPosition(username: string): string {
+    private showPosition(username: string, isUserMod: boolean, cmd: string, args: string[]): string {
         const posIdx = this._queue.findIndex(i => i === username);
         if(posIdx >= 0) {
             return `${username} is position ${posIdx + 1} in the queue`;
@@ -158,7 +143,7 @@ export class Queue {
         }
     }
 
-    private setQueue(isUserMod: boolean, args: string[]): string {
+    private setQueue(username: string, isUserMod: boolean, cmd: string, args: string[]): string {
         if(isUserMod && args[0].length > 0) {
             this._queue = JSON.parse(args[0]);
             return '';

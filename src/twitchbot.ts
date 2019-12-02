@@ -1,12 +1,16 @@
 import express from 'express';
 import { createServer, Server } from 'http';
 const ws = require('ws');
-const fs = require('fs');
+//const fs = require('fs');
 
 import { Credentials } from './credentials';
+
+// Classes
 import { Chat } from './chat';
+import { WS } from './ws';
 
 // Modules
+import { TwitchModule } from './twitch-module';
 import { Queue } from './modules/queue';
 
 export class TwitchBot {
@@ -17,10 +21,7 @@ export class TwitchBot {
     username: string = '';
     password: string = '';
 
-    // channel: string = 'ooclanoo';
-    channel: string = 'domfx';
-
-    queueModule: Queue = new Queue();
+    channels: Map<string, TwitchModule[]> = new Map<string, TwitchModule[]>();
 
     reconnect: boolean = true;
 
@@ -28,17 +29,18 @@ export class TwitchBot {
         this.username = Credentials.user; 
         this.password =  Credentials.password;
 
+        this.channels.set('domfx', [
+            new Queue()
+        ]);
+
         this.app = express();
         this.server = createServer(this.app);
-
         this.server.listen(8000);
 
         this.w = new ws('wss://irc-ws.chat.twitch.tv:443');
 
         this.w.on('open', () => this.onOpen());
-        
         this.w.on('close', () => this.onClose());
-        
         this.w.on('message', (msg) => this.onMessage(msg));
     }
 
@@ -50,7 +52,10 @@ export class TwitchBot {
             console.log('Connected');
             this.w.send(`PASS ${this.password}`);
             this.w.send(`NICK ${this.username}`);
-            this.w.send(`JOIN #${this.channel}`);
+
+            for (const [channel, modules] of this.channels.entries()) {
+                this.w.send(`JOIN #${channel}`);
+            }
             //this.w.send(`PRIVMSG #${this.channel} Connected`);
         }
     }
@@ -85,20 +90,32 @@ export class TwitchBot {
         const words = chat.chatMessage.split(' ').filter(c => c.length > 0);
         if(!!words && words.length > 0) {
             if(words[0].indexOf('!') === 0) {
-                const cmd = words[0];
+                const cmd = words[0].toLocaleLowerCase();
 
                 words.shift();
                 const args = words;
 
-                const returnMsg = this.queueModule.commandHandler(chat.username, chat.isMod, cmd, args);
-                if(!!returnMsg && returnMsg.length > 0)
-                    this.sendChannelMessage(returnMsg);
+                if(cmd === '!domcmds') { 
+                    let cmds = [];
+                    for(let module of this.channels.get(chat.channelName)) {
+                        cmds.push(module.getCommands());
+                        let msg = cmds.join('\n');
+                        this.sendChannelMessage(chat.channelName, msg);
+                    }
+                } else {
+                    for(let modules of this.channels.get(chat.channelName)) {
+                        const returnMsg = modules.commandHandler(chat.username, chat.isMod, cmd, args);
+                        if(!!returnMsg && returnMsg.length > 0)
+                            this.sendChannelMessage(chat.channelName, returnMsg);
+                    }
+                }
+
             }
         }
     }
 
-    private sendChannelMessage(msg: string): void {
-        this.w.send(`PRIVMSG #${this.channel} : ${msg}`);
+    private sendChannelMessage(channel: string, msg: string): void {
+        this.w.send(`PRIVMSG #${channel} : ${msg}`);
     }
 
     private parseMessage(msg: string): Chat {
@@ -142,12 +159,8 @@ export class TwitchBot {
 
             const chatMessage = (!!tokens[2]) ? tokens[2] : '';
             
-            console.log('User: ' + username + ' IsMod: ' + isMod + ' IsBroadcaster: ' + isBroadcaster + ' Message: ' + chatMessage);
+            console.log('Channel: ' + channel + ' User: ' + username + ' IsMod: ' + isMod + ' IsBroadcaster: ' + isBroadcaster + ' Message: ' + chatMessage);
             return new Chat(username, isMod, isBroadcaster, msgType, channel, chatMessage);
         }
     }
-}
-
-export interface WS extends WebSocket {
-    on(event: string, handler: (msg: string) => any): any;
 }
