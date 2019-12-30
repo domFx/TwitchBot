@@ -1,7 +1,7 @@
 export class TwitchModule { 
     protected _commandMap = new Map<string, any>();   
 
-    commandHandler(username: string, isUserMod: boolean, cmd: string, args: string[]): string {
+    commandHandler(username: string, isUserMod: boolean, isUserSub: boolean, cmd: string, args: string[]): string {
         return '';
     }
 

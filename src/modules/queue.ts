@@ -4,6 +4,7 @@ export class Queue extends TwitchModule {
     private _queue: string[];
     private _lastQueuePopTime: Date;
     private _queuePopCooldown: number = 0.15;
+    private _isSubOnlyMode = false;
       
     constructor() {
         super();
@@ -19,13 +20,15 @@ export class Queue extends TwitchModule {
         this._commandMap.set('!clearq', this.clearQueue);
         this._commandMap.set('!setq', this.setQueue);
         this._commandMap.set('!remove', this.removeFromQueue);
+        this._commandMap.set('!subonly', this.setQueueSubOnly);
+        this._commandMap.set('!allowall', this.setQueueToAll);
     } 
     
-    commandHandler(username: string, isUserMod: boolean, cmd: string, args: string[]): string {
-        return this._commandMap.get(cmd).call(this, username, isUserMod, cmd, args);
+    commandHandler(username: string, isUserMod: boolean, isUserSub: boolean, cmd: string, args: string[]): string {
+        return this._commandMap.get(cmd).call(this, username, isUserMod, isUserSub, cmd, args);
     }
 
-    private printQueue(username: string, isUserMod: boolean, cmd: string, args: string[]): string {
+    private printQueue(username: string, isUserMod: boolean, isUserSub: boolean, cmd: string, args: string[]): string {
         if(this._queue.length === 0) {
             return `The queue is empty!`;
         } else {
@@ -38,7 +41,7 @@ export class Queue extends TwitchModule {
         }
     }
 
-    private showNextInQueue(username: string, isUserMod: boolean, cmd: string, args: string[]): string {
+    private showNextInQueue(username: string, isUserMod: boolean, isUserSub: boolean, cmd: string, args: string[]): string {
         if (this._queue.length > 0 && isUserMod) {
             let mins = -1;
             if(!this._lastQueuePopTime) {
@@ -63,13 +66,13 @@ export class Queue extends TwitchModule {
             }
         } else  {
             if(this._queue.length > 0)
-                return this.showPosition(username, isUserMod, cmd, args);
+                return this.showPosition(username, isUserMod, isUserSub, cmd, args);
             else
-                return 'The queue is empty!'
+                return 'The queue is empty!';
         }
     }
 
-    private removeFromQueue(username: string, isUserMod: boolean, cmd: string, args: string[]): string {
+    private removeFromQueue(username: string, isUserMod: boolean, isUserSub: boolean, cmd: string, args: string[]): string {
         if(isUserMod && args[0].length > 0) {
             let user = args[0];
             if(user.startsWith('@'))
@@ -86,7 +89,7 @@ export class Queue extends TwitchModule {
         } 
     }
 
-    private addToQueue(username: string, isUserMod: boolean, cmd: string, args: string[]): string {
+    private addToQueue(username: string, isUserMod: boolean, isUserSub: boolean, cmd: string, args: string[]): string {
         if(isUserMod && args[0].length > 0) {
             if(args[1]) {
                 // add user to specific position in queue
@@ -102,23 +105,31 @@ export class Queue extends TwitchModule {
                     }
                 }
             } else {
+                let user = args[0];
+                if(user.startsWith('@'))
+                    user = user.substring(1);
+
                 // add user to back of queue
-                this._queue.push(args[0]);
+                this._queue.push(user);
             }
         }
 
         return '';
     }
 
-    private joinQueue(username: string, isUserMod: boolean, cmd: string, args: string[]): string {
-        const personIdx = this._queue.findIndex(p => p === username);
-        if(personIdx < 0) {
-            this._queue.push(username);
-            return `Added ${username} to the queue`;
+    private joinQueue(username: string, isUserMod: boolean, isUserSub: boolean, cmd: string, args: string[]): string {
+        if(!this._isSubOnlyMode || (this._isSubOnlyMode && isUserSub)) {
+            const personIdx = this._queue.findIndex(p => p === username);
+            if(personIdx < 0) {
+                this._queue.push(username);
+                return `Added ${username} to the queue`;
+            }
+        } else {
+            return `The queue is in sub only mode`;
         }
     }
 
-    private leaveQueue(username: string, isUserMod: boolean, cmd: string, args: string[]): string {
+    private leaveQueue(username: string, isUserMod: boolean, isUserSub: boolean, cmd: string, args: string[]): string {
         let idx = this._queue.findIndex(p => p === username);
         if(idx >= 0) {
             this._queue.splice(idx, 1);
@@ -126,7 +137,7 @@ export class Queue extends TwitchModule {
         }
     }
 
-    private clearQueue(username: string, isUserMod: boolean, cmd: string, args: string[]): string {
+    private clearQueue(username: string, isUserMod: boolean, isUserSub: boolean, cmd: string, args: string[]): string {
         if(isUserMod) {
             this._queue = [];
         }
@@ -134,7 +145,7 @@ export class Queue extends TwitchModule {
         return '';
     }
 
-    private showPosition(username: string, isUserMod: boolean, cmd: string, args: string[]): string {
+    private showPosition(username: string, isUserMod: boolean, isUserSub: boolean, cmd: string, args: string[]): string {
         const posIdx = this._queue.findIndex(i => i === username);
         if(posIdx >= 0) {
             return `${username} is position ${posIdx + 1} in the queue`;
@@ -143,10 +154,24 @@ export class Queue extends TwitchModule {
         }
     }
 
-    private setQueue(username: string, isUserMod: boolean, cmd: string, args: string[]): string {
+    private setQueue(username: string, isUserMod: boolean, isUserSub: boolean, cmd: string, args: string[]): string {
         if(isUserMod && args[0].length > 0) {
             this._queue = JSON.parse(args[0]);
             return '';
+        }
+    }
+
+    private setQueueSubOnly(username: string, isUserMod: boolean, isUserSub: boolean, cmd: string, args: string[]): string { 
+        if(isUserMod) {
+            this._isSubOnlyMode = true;
+            return 'The queue is in sub only mode';
+        }
+    }
+
+    private setQueueToAll(username: string, isUserMod: boolean, isUserSub: boolean, cmd: string, args: string[]): string { 
+        if(isUserMod) {
+            this._isSubOnlyMode = false;
+            return 'The queue is open to all';
         }
     }
 }

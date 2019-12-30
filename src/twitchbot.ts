@@ -29,9 +29,18 @@ export class TwitchBot {
         this.username = Credentials.user; 
         this.password =  Credentials.password;
 
-        this.channels.set('domfx', [
+        this.channels.set('ooclanoo', [
             new Queue()
         ]);
+
+        this.connect();
+    }
+
+    private connect() {
+        // Clean up old connections
+        this.app = null;
+        this.server = null;
+        this.w = null;
 
         this.app = express();
         this.server = createServer(this.app);
@@ -82,7 +91,7 @@ export class TwitchBot {
 
         if (this.reconnect) {
             // Try to reconnect
-            this.w = new ws('wss://irc-ws.chat.twitch.tv:443');
+            this.connect();
         }
     }
     
@@ -104,7 +113,7 @@ export class TwitchBot {
                     }
                 } else {
                     for(let modules of this.channels.get(chat.channelName)) {
-                        const returnMsg = modules.commandHandler(chat.username, chat.isMod, cmd, args);
+                        const returnMsg = modules.commandHandler(chat.username, chat.isMod, chat.isSubscriber, cmd, args);
                         if(!!returnMsg && returnMsg.length > 0)
                             this.sendChannelMessage(chat.channelName, returnMsg);
                     }
@@ -135,12 +144,17 @@ export class TwitchBot {
             }
 
             let isBroadcaster = false;
+            let isSubscriber = false;
             const badgeListIdx = userTags.findIndex(m => m.startsWith('badges'));
             if(badgeListIdx >= 0) {
                 const badgeTokens = userTags[badgeListIdx].split('=');
-                if(badgeTokens.length === 2 && badgeTokens[1].includes('broadcaster')) {
-                    isMod = true;
-                    isBroadcaster = true;
+                if(badgeTokens.length === 2) {
+                    if(badgeTokens[1].includes('broadcaster')) {
+                        isMod = true;
+                        isBroadcaster = true;
+                    } else if(badgeTokens[1].includes('subscriber')) {
+                        isSubscriber = true;
+                    }                    
                 }
             }
 
@@ -159,8 +173,8 @@ export class TwitchBot {
 
             const chatMessage = (!!tokens[2]) ? tokens[2] : '';
             
-            console.log('Channel: ' + channel + ' User: ' + username + ' IsMod: ' + isMod + ' IsBroadcaster: ' + isBroadcaster + ' Message: ' + chatMessage);
-            return new Chat(username, isMod, isBroadcaster, msgType, channel, chatMessage);
+            console.log('Channel: ' + channel + ' User: ' + username + ' IsMod: ' + isMod + ' IsBroadcaster: ' + isBroadcaster + ' Sub: ' + isSubscriber + ' Message: ' + chatMessage);
+            return new Chat(username, isMod, isBroadcaster, isSubscriber, msgType, channel, chatMessage);
         }
     }
 }
