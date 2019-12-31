@@ -1,3 +1,4 @@
+const CopyPlugin = require('copy-webpack-plugin');
 const path = require('path');
 
 module.exports = {
@@ -20,8 +21,22 @@ module.exports = {
                     }
                 ]
             }
+            // {
+            //     test: /\.json?$/,
+            //     exclude: path.resolve(__dirname, 'node_modules'),
+            //     use : [
+            //         {
+            //             loader: 'file-loader'
+            //         }
+            //     ]
+            // }
         ]
     },
+    plugins: [
+        new CopyPlugin([
+            { from: './src/appsettings.json', to: 'appsettings.json' }
+        ])
+    ],
     mode: 'development',
     watch: true
 }

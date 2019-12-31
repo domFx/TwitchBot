@@ -5,7 +5,7 @@
   "main": "/src/app.ts",
   "scripts": {
     "build": "webpack --config webpack.config.js",
-    "server": "nodemon ./dist/app.js",
+    "server": "cd dist && nodemon ./app.js",
     "start": "npm-run-all --parallel build server"
   },
   "repository": {
@@ -15,17 +15,19 @@
   "author": "Dominic Windle",
   "license": "ISC",
   "dependencies": {
-    "express": "^4.16.3",
-    "ws": "^5.2.0"
+    "express": "^4.17.1",
+    "ws": "^7.2.1"
   },
   "devDependencies": {
-    "@types/express": "^4.16.0",
-    "@types/ws": "^5.1.2",
-    "nodemon": "^2.0.1",
+    "@types/express": "^4.17.2",
+    "@types/ws": "^6.0.4",
+    "copy-webpack-plugin": "^5.1.1",
+    "file-loader": "^5.0.2",
+    "nodemon": "^2.0.2",
     "npm-run-all": "^4.1.5",
-    "ts-loader": "^4.4.2",
-    "typescript": "^2.9.2",
-    "webpack": "^4.15.1",
-    "webpack-cli": "^3.3.9"
+    "ts-loader": "^6.2.1",
+    "typescript": "^3.7.4",
+    "webpack": "^4.41.5",
+    "webpack-cli": "^3.3.10"
   }
 }

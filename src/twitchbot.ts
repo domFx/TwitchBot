@@ -1,13 +1,12 @@
 import express from 'express';
 import { createServer, Server } from 'http';
 const ws = require('ws');
-//const fs = require('fs');
-
-import { Credentials } from './credentials';
+const fs = require('fs');
 
 // Classes
-import { Chat } from './chat';
-import { WS } from './ws';
+import { AppSettings } from './models/app-settings';
+import { UserMessage } from './models/user-message';
+import { WS } from './models/ws';
 
 // Modules
 import { TwitchModule } from './twitch-module';
@@ -18,22 +17,33 @@ export class TwitchBot {
     app: express.Application;
     server: Server;
 
-    username: string = '';
-    password: string = '';
+    settings: AppSettings;
+    pingInterval: NodeJS.Timer;
+    reconnectionCounter: number = 0;
 
     channels: Map<string, TwitchModule[]> = new Map<string, TwitchModule[]>();
 
-    reconnect: boolean = true;
-
     constructor() {
-        this.username = Credentials.user; 
-        this.password =  Credentials.password;
+        try {
+            this.settings = JSON.parse(fs.readFileSync('appsettings.json'));
+        } catch { 
+            console.error('Failed to load settings file')
+        }
+        
+        if(this.settings) {
+            if(this.settings.channels && this.settings.channels.length > 0) {
+                for(let c of this.settings.channels) {
+                    if(c.active) {
+                        this.channels.set(c.name, [
+                            new Queue()
+                        ]);
+                    }
+                }
 
-        this.channels.set('ooclanoo', [
-            new Queue()
-        ]);
-
-        this.connect();
+                // Need at least one active channel to connect
+                this.connect();
+            }    
+        }       
     }
 
     private connect() {
@@ -48,24 +58,30 @@ export class TwitchBot {
 
         this.w = new ws('wss://irc-ws.chat.twitch.tv:443');
 
+        console.log('Connecting');
+
         this.w.on('open', () => this.onOpen());
         this.w.on('close', () => this.onClose());
         this.w.on('message', (msg) => this.onMessage(msg));
     }
 
     private onOpen(): any {
-        console.log('Connecting');
         if(this.w.readyState === this.w.OPEN) {
             this.w.send(`CAP REQ :twitch.tv/tags`);
 
             console.log('Connected');
-            this.w.send(`PASS ${this.password}`);
-            this.w.send(`NICK ${this.username}`);
+            this.w.send(`PASS ${this.settings.password}`);
+            this.w.send(`NICK ${this.settings.username}`);
 
             for (const [channel, modules] of this.channels.entries()) {
                 this.w.send(`JOIN #${channel}`);
             }
-            //this.w.send(`PRIVMSG #${this.channel} Connected`);
+
+            this.pingInterval = setInterval(() => {
+                if(!!this.w) {
+                    this.w.send(`PING :tmi.twitch.tv`);
+                }
+            }, 60 * 1000);
         }
     }
 
@@ -87,16 +103,19 @@ export class TwitchBot {
     }
 
     private onClose(): any {
-        console.log('Connection Closed');
+        clearInterval(this.pingInterval);
 
-        if (this.reconnect) {
-            // Try to reconnect
+        // Try to reconnect (5 tries max)
+        if (this.settings.reconnectOnFail && this.reconnectionCounter <= 5) {
+            this.reconnectionCounter++;
             this.connect();
+        } else {
+            console.error(`Unable to reconnect or exceeded the number of max retries (${this.reconnectionCounter} / 5)`);
         }
     }
     
-    commandHandler(chat: Chat) {
-        const words = chat.chatMessage.split(' ').filter(c => c.length > 0);
+    commandHandler(userMessage: UserMessage) {
+        const words = userMessage.chatMessage.split(' ').filter(c => c.length > 0);
         if(!!words && words.length > 0) {
             if(words[0].indexOf('!') === 0) {
                 const cmd = words[0].toLocaleLowerCase();
@@ -104,18 +123,26 @@ export class TwitchBot {
                 words.shift();
                 const args = words;
 
-                if(cmd === '!domcmds') { 
+                if(userMessage.isOverlord && cmd === '!domcmds') { 
                     let cmds = [];
-                    for(let module of this.channels.get(chat.channelName)) {
+                    for(let module of this.channels.get(userMessage.channelName)) {
                         cmds.push(module.getCommands());
                         let msg = cmds.join('\n');
-                        this.sendChannelMessage(chat.channelName, msg);
+                        this.sendChannelMessage(userMessage.channelName, msg);
                     }
+                } else if (userMessage.isOverlord && cmd === '!channels') {
+                    const channels = [];
+        
+                    for(let [key, val] of this.channels.entries()) {
+                        channels.push(key);
+                    }
+                    let msg = channels.join(', ');
+                    this.sendChannelMessage(userMessage.channelName, msg);
                 } else {
-                    for(let modules of this.channels.get(chat.channelName)) {
-                        const returnMsg = modules.commandHandler(chat.username, chat.isMod, chat.isSubscriber, cmd, args);
+                    for(let modules of this.channels.get(userMessage.channelName)) {
+                        const returnMsg = modules.commandHandler(userMessage.username, userMessage.isMod, userMessage.isSubscriber, cmd, args);
                         if(!!returnMsg && returnMsg.length > 0)
-                            this.sendChannelMessage(chat.channelName, returnMsg);
+                            this.sendChannelMessage(userMessage.channelName, returnMsg);
                     }
                 }
 
@@ -127,7 +154,7 @@ export class TwitchBot {
         this.w.send(`PRIVMSG #${channel} : ${msg}`);
     }
 
-    private parseMessage(msg: string): Chat {
+    private parseMessage(msg: string): UserMessage {
         const tokens = msg.split(':').filter(m => m.length > 0);
 
         if(tokens.length > 0) {            
@@ -174,7 +201,10 @@ export class TwitchBot {
             const chatMessage = (!!tokens[2]) ? tokens[2] : '';
             
             console.log('Channel: ' + channel + ' User: ' + username + ' IsMod: ' + isMod + ' IsBroadcaster: ' + isBroadcaster + ' Sub: ' + isSubscriber + ' Message: ' + chatMessage);
-            return new Chat(username, isMod, isBroadcaster, isSubscriber, msgType, channel, chatMessage);
+            
+            const isOverlord = this.settings.overlords.indexOf(username) >= 0;
+
+            return new UserMessage(username, isMod, isBroadcaster, isSubscriber, isOverlord, msgType, channel, chatMessage);
         }
     }
 }
