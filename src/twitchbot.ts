@@ -101,7 +101,9 @@ export class TwitchBot {
                 try {
                     let r = this.parseMessage(msg);
                     this.commandHandler(r);
-                } catch {
+                } catch (e) {
+
+                    console.error(e);
                     console.log('Unable to parse message', msg);
                 }
             }
