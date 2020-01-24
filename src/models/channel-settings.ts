@@ -1,4 +1,4 @@
-export interface Channel { 
+export interface ChannelSettings { 
     name: string;
     active: boolean;    
 }

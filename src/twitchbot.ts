@@ -1,23 +1,26 @@
 import express from 'express';
 import { createServer, Server } from 'http';
+// import * as ws from 'ws';
+// import * as fs from 'fs';
 const ws = require('ws');
 const fs = require('fs');
 
 // Classes
-import { AppSettings } from './models/app-settings';
+import { Global } from './models/global';
 import { UserMessage } from './models/user-message';
 import { WS } from './models/ws';
 
 // Modules
 import { TwitchModule } from './twitch-module';
+
 import { Queue } from './modules/queue';
+import { Spotify } from './modules/spotify';
 
 export class TwitchBot {
     w: WS;
     app: express.Application;
     server: Server;
 
-    settings: AppSettings;
     pingInterval: NodeJS.Timer;
     reconnectionCounter: number = 0;
 
@@ -25,25 +28,26 @@ export class TwitchBot {
 
     constructor() {
         try {
-            this.settings = JSON.parse(fs.readFileSync('appsettings.json'));
-        } catch { 
-            console.error('Failed to load settings file')
-        }
-        
-        if(this.settings) {
-            if(this.settings.channels && this.settings.channels.length > 0) {
-                for(let c of this.settings.channels) {
-                    if(c.active) {
-                        this.channels.set(c.name, [
-                            new Queue()
-                        ]);
+            Global.instance().settings = JSON.parse(fs.readFileSync('appsettings.json'));
+                    
+            if(Global.instance().settings) {
+                if(Global.instance().settings.channels && Global.instance().settings.channels.length > 0) {
+                    for(let c of Global.instance().settings.channels) {
+                        if(c.active) {
+                            this.channels.set(c.name, [
+                                new Queue(),
+                                new Spotify()
+                            ]);
+                        }
                     }
-                }
 
-                // Need at least one active channel to connect
-                this.connect();
-            }    
-        }       
+                    // Need at least one active channel to connect
+                    this.connect();
+                }    
+            }      
+        } catch (e) { 
+            console.error('Failed to load settings file', e);
+        } 
     }
 
     private connect() {
@@ -70,8 +74,8 @@ export class TwitchBot {
             this.w.send(`CAP REQ :twitch.tv/tags`);
 
             console.log('Connected');
-            this.w.send(`PASS ${this.settings.password}`);
-            this.w.send(`NICK ${this.settings.username}`);
+            this.w.send(`PASS ${Global.instance().settings.password}`);
+            this.w.send(`NICK ${Global.instance().settings.username}`);
 
             for (const [channel, modules] of this.channels.entries()) {
                 this.w.send(`JOIN #${channel}`);
@@ -89,6 +93,8 @@ export class TwitchBot {
         // Keep alive
         if(msg === 'PING :tmi.twitch.tv') {
             this.w.send('PONG :tmi.twitch.tv');
+        } else if(msg === ':tmi.twitch.tv PONG tmi.twitch.tv :tmi.twitch.tv\r\n') { 
+            //console.log('received pong')
         } else {
             console.log(msg);
             if(msg.indexOf('PRIVMSG') >= 0) {
@@ -106,7 +112,7 @@ export class TwitchBot {
         clearInterval(this.pingInterval);
 
         // Try to reconnect (5 tries max)
-        if (this.settings.reconnectOnFail && this.reconnectionCounter <= 5) {
+        if (Global.instance().settings.reconnectOnFail && this.reconnectionCounter <= 5) {
             this.reconnectionCounter++;
             this.connect();
         } else {
@@ -152,6 +158,10 @@ export class TwitchBot {
 
     private sendChannelMessage(channel: string, msg: string): void {
         this.w.send(`PRIVMSG #${channel} : ${msg}`);
+    }
+
+    private sendWhisper(username: string, msg: string): void {
+        this.w.send(`PRIVMSG #jtv :/w ${username} ${msg}`);
     }
 
     private parseMessage(msg: string): UserMessage {
@@ -202,7 +212,7 @@ export class TwitchBot {
             
             console.log('Channel: ' + channel + ' User: ' + username + ' IsMod: ' + isMod + ' IsBroadcaster: ' + isBroadcaster + ' Sub: ' + isSubscriber + ' Message: ' + chatMessage);
             
-            const isOverlord = this.settings.overlords.indexOf(username) >= 0;
+            const isOverlord = Global.instance().settings.overlords.indexOf(username) >= 0;
 
             return new UserMessage(username, isMod, isBroadcaster, isSubscriber, isOverlord, msgType, channel, chatMessage);
         }
